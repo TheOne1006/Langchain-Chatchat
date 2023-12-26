@@ -318,8 +318,10 @@ def download_doc(
 
     if preview:
         content_disposition_type = "inline"
+        media_type=None
     else:
         content_disposition_type = None
+        media_type="multipart/form-data"
 
     try:
         kb_file = KnowledgeFile(filename=file_name,
@@ -329,7 +331,7 @@ def download_doc(
             return FileResponse(
                 path=kb_file.filepath,
                 filename=kb_file.filename,
-                media_type="multipart/form-data",
+                media_type=media_type,
                 content_disposition_type=content_disposition_type,
             )
     except Exception as e:

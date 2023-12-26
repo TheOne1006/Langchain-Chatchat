@@ -239,7 +239,7 @@ def mount_knowledge_site_routes(app: FastAPI):
     from server.knowledge_base.kb_site_api import (
         create_site,
         extract_site_urls, crawl_site_urls, list_local_site_urls,
-        remove_local_site_url, crawl_site_url_force, update_site)
+        remove_local_site_url, crawl_site_url_force, update_site, list_kb_sites)
     
     app.post("/knowledge_base/extract_site_urls",
              tags=["Knowledge Base Management"],
@@ -271,7 +271,7 @@ def mount_knowledge_site_routes(app: FastAPI):
              summary="爬取某个链接"
              )(crawl_site_url_force)
     
-    app.post("/knowledge_base/list_local_site_urls",
+    app.get("/knowledge_base/list_local_site_urls",
              tags=["Knowledge Base Management"],
              response_model=BaseResponse,
              summary="本地网页信息"
@@ -282,8 +282,12 @@ def mount_knowledge_site_routes(app: FastAPI):
              response_model=BaseResponse,
              summary="删除指定网页"
              )(remove_local_site_url)
-
     
+    app.get("/knowledge_base/sites",
+            tags=["Knowledge Base Management"],
+            response_model=BaseResponse,
+            summary="获取知识站点列表"
+            )(list_kb_sites)
 
 
 def mount_filename_summary_routes(app: FastAPI):

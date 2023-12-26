@@ -36,11 +36,14 @@ def list_site_from_db(session, kb_name: str) -> List[Dict]:
 def get_site_detail(session,
                     kb_name: str,
                     site_name: str = None,
-                    site_id: int = None
+                    site_id: int = None,
+                    folder_name: str = None,
                     ) -> dict:
+    if not kb_name:
+        raise ValueError("kb_name cannot be None.")
     
-    if not site_name and not site_id:
-        raise ValueError("site_name and site_id cannot be None at the same time.")
+    if not site_name and not site_id and not folder_name:
+        raise ValueError("site_name / site_id / folder_name cannot be None at the same time.")
     
     where = {
         "kb_name": kb_name,
@@ -50,6 +53,8 @@ def get_site_detail(session,
         where["site_name"] = site_name
     if site_id:
         where["id"] = site_id
+    if folder_name:
+        where["folder_name"] = folder_name
 
     site: KnowledgeSiteModel = session.query(KnowledgeSiteModel).filter_by(**where).first()
 

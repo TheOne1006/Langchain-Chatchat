@@ -720,9 +720,9 @@ class ApiRequest:
             chunk_overlap=OVERLAP_SIZE,
             zh_title_enhance=ZH_TITLE_ENHANCE,
     ):
-        '''
+        """
         对应api.py/knowledge_base/recreate_vector_store接口
-        '''
+        """
         data = {
             "knowledge_base_name": knowledge_base_name,
             "allow_empty_kb": allow_empty_kb,
@@ -741,56 +741,129 @@ class ApiRequest:
         )
         return self._httpx_stream2generator(response, as_json=True)
     
+    def list_sites(
+            self,
+            knowledge_base_name: str
+    ):
+        """
+        对应api.py/knowledge_base/list_sites接口
+        """
+        response = self.get("/knowledge_base/sites", {
+            "knowledge_base_name": knowledge_base_name,
+        })
+        
+        return self._get_response_value(response, as_json=True, value_func=lambda r: r.get("data", []))
+    
+    def list_local_site_urls(
+            self,
+            knowledge_base_name: str,
+            folder_name: str,
+    ):
+        """
+        对应api.py/knowledge_base/list_local_site_urls接口
+        """
+        if not folder_name:
+            return []
+        
+        response = self.get("/knowledge_base/list_local_site_urls", {
+            "knowledge_base_name": knowledge_base_name,
+            "folder_name": folder_name,
+        })
+        
+        return self._get_response_value(response, as_json=True, value_func=lambda r: r.get("data", []))
+    
+    def create_kb_site(
+            self,
+            hostname: str,
+            knowledge_base_name: str,
+            start_urls: List[str],
+            pattern: str = None,
+            max_urls: int = None,
+            site_name: str = None,
+            remove_selectors: List[str] = None,
+            folder_name: str = None,
+    ):
+        data = {
+            "knowledge_base_name": knowledge_base_name,
+            "folder_name": folder_name,
+            "hostname": hostname,
+            "site_name": site_name,
+            "start_urls": start_urls,
+            "pattern": pattern,
+            "max_urls": max_urls,
+            "remove_selectors": remove_selectors,
+        }
+        
+        response = self.post("/knowledge_base/create_knowledge_site", json=data)
+        
+        return self._get_response_value(response, as_json=True, value_func=lambda r: r.get("data", []))
+    
+    def update_kb_site(
+        self,
+        site_id: int,
+        hostname: str,
+        knowledge_base_name: str,
+        start_urls: List[str],
+        pattern: str = None,
+        max_urls: int = None,
+        site_name: str = None,
+        remove_selectors: List[str] = None,
+    ):
+        data = {
+            "knowledge_base_name": knowledge_base_name,
+            "site_id": site_id,
+            "hostname": hostname,
+            "site_name": site_name,
+            "start_urls": start_urls,
+            "pattern": pattern,
+            "max_urls": max_urls,
+            "remove_selectors": remove_selectors,
+        }
+        
+        response = self.post("/knowledge_base/update_knowledge_site", json=data)
+        
+        return self._get_response_value(response, as_json=True, value_func=lambda r: r.get("data", []))
+    
     # 网页加载相关 提取链接
     def extract_site_urls(
             self,
+            hostname: str,
             pattern: str,
             start_urls: list[str],
-            max_urls: int,
-            site_loader_type: str):
-        '''
+            max_urls: int):
+        """
         对应api.py/knowledge_base/extract_site_urls接口
-        '''
+        """
         data = {
+            "hostname": hostname,
             "pattern": pattern,
             "start_urls": start_urls,
-            "max_urls": max_urls,
-            "site_loader_type": site_loader_type,
+            "max_urls": max_urls
         }
+        
         response = self.post(
             "/knowledge_base/extract_site_urls",
             json=data,
         )
+        
         return self._get_response_value(response, as_json=True, value_func=lambda r: r.get("data", {}))
     
     def crawl_site_urls(
             self,
-            site_name: str,
-            folder_name: str,
             kb_name: str,
-            pattern: str,
-            start_urls: list[str],
+            site_id: int,
             site_urls: list[str],
-            max_urls: int,
-            site_loader_type: str,
-            document_loader_name: str,
-            site_loader_name: str,
+            filter_method: str,
     ):
         '''
         对应api.py/knowledge_base/crawl_site_urls接口
         '''
         # todo enum site_loader_name document_loader_name
         data = {
-            "site_name": site_name,
-            "folder_name": folder_name,
-            "kb_name": kb_name,
-            "pattern": pattern,
-            "start_urls": start_urls,
+            "knowledge_base_name": kb_name,
+            "site_id": site_id,
             "site_urls": site_urls,
-            "document_loader_name": document_loader_name,
-            "site_loader_name": site_loader_name,
-            "max_urls": max_urls,
-            "site_loader_type": site_loader_type,
+            "filter_method": filter_method,
         }
         
         response = self.post(
@@ -799,8 +872,26 @@ class ApiRequest:
             stream=True,
         )
         
-        return self._httpx_stream2generator(response)
+        return self._httpx_stream2generator(response, as_json=True)
     
+    def crawl_site_url_force(
+            self,
+            knowledge_base_name: str,
+            site_id: str,
+            site_url: str,
+    ):
+        data = {
+            "knowledge_base_name": knowledge_base_name,
+            "site_url": site_url,
+            "site_id": site_id,
+        }
+        
+        response = self.post(
+            "/knowledge_base/crawl_site_url_force",
+            json=data,
+        )
+        
+        return self._get_response_value(response, as_json=True, value_func=lambda r: r.get("data", {}))
     
     # LLM模型相关操作
     def list_running_models(

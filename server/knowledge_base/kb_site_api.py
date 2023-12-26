@@ -12,7 +12,7 @@ from server.knowledge_base.utils import validate_kb_name
 from server.knowledge_base.kb_service.base import KBServiceFactory
 from server.knowledge_base.kb_site.base import KBSiteService
 from server.knowledge_base.utils import list_files_from_folder
-from fastapi import Body
+from fastapi import Body, Query
 from fastapi.responses import StreamingResponse
 from langchain.document_loaders import AsyncChromiumLoader
 from langchain.document_transformers import BeautifulSoupTransformer
@@ -32,7 +32,7 @@ _request_params = {
         "aside", "div.nextra-banner-container", "header",
         "footer", "nav", "div.nx-flex.nx-items-center"
     ]]),
-    "folder_name": Body(..., examples=["langchain_cn_doc"]),
+    "folder_name": Body(..., description="目录", examples=["langchain_cn_doc"]),
     "site_urls": Body(..., examples=[[
         "https://www.langchain.asia/modules/agents/getting_started",
         "https://www.langchain.asia/modules/agents"
@@ -187,7 +187,7 @@ def crawl_site_urls(
     """
     
     site_service = KBSiteService(knowledge_base_name)
-    site_info = site_service.find_site_by_id(site_id)
+    site_info = site_service.find_site(site_id=site_id)
     site_urls = list(set(site_urls))
     
     def output():
@@ -214,13 +214,15 @@ def crawl_site_urls(
         
         if not len(filter_site_urls):
             return {"code": 404, "msg": "没有需要更新的网址"}
-        
-        # 下载 html 并存放
-        loader = AsyncChromiumLoader(filter_site_urls)
-        # 限制并发数
-        htmls = loader.load()
-        
-        for html, site_url in zip(htmls, filter_site_urls):
+       
+        for i, site_url in enumerate(filter_site_urls):
+            
+            try:
+                loader = AsyncChromiumLoader([site_url])
+                htmls = loader.load()
+                html = htmls[0]
+            except Exception as e:
+                return {"code": 500, "msg": f"{site_url} 下载失败"}
             # url 解析
             url_parse_obj = urlparse(site_url)
             hostname = url_parse_obj.scheme + "://" + url_parse_obj.hostname
@@ -253,9 +255,11 @@ def crawl_site_urls(
             
             yield json.dumps({
                 "code": 200,
-                "msg": "更新成功",
+                "msg": f"{site_url} 下载成功",
                 "doc": str(cur_file_path),
                 "url": site_url,
+                "finished": i + 1,
+                "total": len(filter_site_urls)
             }, ensure_ascii=False)
         
     return StreamingResponse(output(), media_type="text/event-stream")
@@ -271,7 +275,7 @@ def crawl_site_url_force(
     """
     
     site_service = KBSiteService(knowledge_base_name)
-    site_info = site_service.find_site_by_id(site_id)
+    site_info = site_service.find_site(site_id=site_id)
     
     kb = KBServiceFactory.get_service_by_name(knowledge_base_name)
     
@@ -317,7 +321,7 @@ def remove_local_site_url(
     删除本地网站文件
     """
     site_service = KBSiteService(knowledge_base_name)
-    site_info = site_service.find_site_by_id(site_id)
+    site_info = site_service.find_site(site_id=site_id)
     
     kb = KBServiceFactory.get_service_by_name(knowledge_base_name)
     
@@ -338,9 +342,9 @@ def remove_local_site_url(
 
 
 def list_local_site_urls(
-        knowledge_base_name: str = _request_params["knowledge_base_name"],
-        folder_name: str = _request_params["folder_name"],
-):
+        knowledge_base_name: str = Query(..., description="知识库名称", examples=["samples"]),
+        folder_name: str = Query(..., description="目录", examples=["langchain_cn_doc"]),
+) -> BaseResponse:
     kb = KBServiceFactory.get_service_by_name(knowledge_base_name)
     
     if kb is None:
@@ -348,5 +352,30 @@ def list_local_site_urls(
     
     doc_path = kb.doc_path  # knowledge_base/xxx/content
     
+    site_service = KBSiteService(knowledge_base_name)
+    site_info = site_service.find_site(folder_name=folder_name)
+    
     files = KBSiteService.get_local_site_urls(doc_path, folder_name)
-    return BaseResponse(code=200, msg=f"文件列表", data={"files": files})
+    
+    hostname = site_info['hostname']
+    folder_name = site_info['folder_name']
+    
+    result_list = [
+        {
+            "url": hostname + item.replace(".html", ""),
+            "preview_file": folder_name + item,
+        } for item in files
+    ]
+    
+    return BaseResponse(code=200, msg=f"文件列表", data=result_list)
+
+
+def list_kb_sites(
+        knowledge_base_name: str = Query(..., description="知识库名称", examples=["samples"])
+) -> BaseResponse:
+    """
+    获取知识库的网站列表
+    """
+    site_service = KBSiteService(knowledge_base_name)
+    sites = site_service.list_kb_sites()
+    return BaseResponse(code=200, msg=f"网站列表", data=sites)

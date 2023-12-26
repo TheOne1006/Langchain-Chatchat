@@ -9,8 +9,6 @@ import shutil
 from server.db.repository.knowledge_site_repository import (list_site_from_db, get_site_detail, delete_site_from_db,
                                                             add_site_to_db, update_site_to_db)
 
-from server.knowledge_base.utils import list_files_from_folder
-
 
 class KBSiteService(ABC):
     kb_name: str
@@ -18,22 +16,26 @@ class KBSiteService(ABC):
     def __init__(self, kb_name: str):
         self.kb_name = kb_name
     
-    def find_site(self, site_name: str):
+    def list_kb_sites(self) -> List[Dict]:
+        """
+        获取知识库网站列表
+        :return:
+        """
+        sites = list_site_from_db(kb_name=self.kb_name)
+        return sites
+    
+    def find_site(self, site_name: str = None, site_id: int = None, folder_name: str = None) -> Dict:
         """
         查找知识库网站
         :param site_name:
-        :return:
-        """
-        site = get_site_detail(kb_name=self.kb_name, site_name=site_name)
-        return site
-    
-    def find_site_by_id(self, site_id: int):
-        """
-        查找知识库网站
         :param site_id:
+        :param folder_name:
         :return:
         """
-        site = get_site_detail(kb_name=self.kb_name, site_id=site_id)
+        site = get_site_detail(kb_name=self.kb_name,
+                               site_name=site_name,
+                               site_id=site_id,
+                               folder_name=folder_name)
         return site
     
     def add_kb_site(self, site_doc: Dict) -> Dict:
