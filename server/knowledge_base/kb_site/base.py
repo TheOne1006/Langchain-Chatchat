@@ -55,27 +55,31 @@ class KBSiteService(ABC):
     
     @staticmethod
     def check_filter_method(filter_method: str) -> bool:
-        allow_filter_methods = ["none", "append"]
+        allow_filter_methods = ["all", "new"]
         
         if filter_method not in allow_filter_methods:
             raise ValueError(f"filter_method={filter_method} 不在允许的范围内")
         
         return True
     
-    # todo
     @staticmethod
-    def filter_site_urls(site_urls: List[str], filter_method: str) -> List[str]:
+    def filter_site_urls(site_urls: List[str], filter_method: str, local_urls: List[str]) -> List[str]:
         """
         过滤 site_urls
         :param site_urls:
         :param filter_method:
         :return:
         """
-        if filter_method == "none":
+        if filter_method == "all":
             return site_urls
         
-        elif filter_method == "append":
-            return site_urls
+        elif filter_method == "new":
+            new_list = []
+            # 在 site_urls 且不在 local_urls 的 url
+            for site_url in site_urls:
+                if site_url not in local_urls:
+                    new_list.append(site_url)
+            return new_list
     
     @staticmethod
     def check_urls(urls: List[str]) -> bool:
@@ -201,4 +205,7 @@ class KBSiteService(ABC):
             for entry in it:
                 process_entry(entry)
         
-        return result
+        # 去除 cur_file_path 前缀
+        cur_file_path_str = str(cur_file_path)
+        final_result = [x.replace(cur_file_path_str, "") for x in result]
+        return final_result

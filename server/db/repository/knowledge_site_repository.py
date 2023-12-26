@@ -96,8 +96,10 @@ def update_site_to_db(session, kb_name: str, site_id: int, site_info: Dict):
     if not ins:
         raise ValueError(f"site_id={site_id} not found in kb_name={kb_name}")
     
-    del site_info['id']
-    del site_info['folder_name']
+    if site_info.get('id'):
+        site_info.pop('id')
+    if site_info.get('kb_name'):
+        site_info.pop('kb_name')
     
     for k, v in site_info.items():
         setattr(ins, k, v)

@@ -1,8 +1,11 @@
+import logging
 import urllib
+
 import re
 import os
 from pathlib import Path
 from typing import List
+from configs import EMBEDDING_MODEL, logger, log_verbose
 from urllib.parse import urlparse
 from server.utils import BaseResponse, ListResponse
 from server.knowledge_base.utils import validate_kb_name
@@ -102,14 +105,6 @@ def create_site(
 ):
     """
      创建 site 信息
-    :param hostname:
-    :param knowledge_base_name:
-    :param start_urls:
-    :param pattern:
-    :param max_urls:
-    :param site_name:
-    :param remove_selectors:
-    :param folder_name:
     """
     
     # check base_name
@@ -123,25 +118,24 @@ def create_site(
     doc_path = kb.doc_path  # knowledge_base/xxx/content
     # check start_urls，folder_name
     
-    start_urls = [hostname + url if not url.startswith('http') else url for url in start_urls]
-    
     try:
-        KBSiteService.check_urls(start_urls)
+        full_start_urls = [hostname + url if not url.startswith('http') else url for url in start_urls]
+        KBSiteService.check_urls(full_start_urls)
         target_folder_path = KBSiteService.check_folder(doc_path, folder_name)
     except ValueError as e:
         return BaseResponse(code=500, msg=f"{e}")
-        
+    
     # 写入 db
     site_service = KBSiteService(knowledge_base_name)
     new_site_info = site_service.add_kb_site({
-        "hostname": hostname,
+        "hostname": hostname.rstrip('/ '),
         "site_name": site_name,
         "start_urls": start_urls,
         "pattern": pattern,
         "max_urls": max_urls,
         "kb_name": knowledge_base_name,
         "remove_selectors": remove_selectors,
-        "folder_name": folder_name,
+        "folder_name": folder_name.strip('/ ')
     })
     
     os.mkdir(target_folder_path)
@@ -158,37 +152,23 @@ def update_site(
         max_urls: int = _request_params["max_urls"],
         site_name: str = _request_params["site_name"],
         remove_selectors: List[str] = _request_params["remove_selectors"],
-        site_urls: List[str] = _request_params["folder_name"],
 ):
     """
      修改 site 信息
-    :param site_id:
-    :param knowledge_base_name:
-    :param hostname:
-    :param start_urls:
-    :param pattern:
-    :param max_urls:
-    :param site_name:
-    :param remove_selectors:
-    :param site_urls:
     """
     
     try:
-        KBSiteService.check_urls(start_urls)
-        KBSiteService.check_urls(site_urls)
+        full_start_urls = [hostname + url if not url.startswith('http') else url for url in start_urls]
+        KBSiteService.check_urls(full_start_urls)
     except ValueError as e:
         return BaseResponse(code=404, msg=e)
     
-    # 重置 site_urls, 重新排序
-    site_urls = sorted(list[set(site_urls)])
-    
     site_service = KBSiteService(knowledge_base_name)
     update_site_info = site_service.update_kb_site(site_id, {
-        "hostname": hostname,
+        "hostname": hostname.rstrip('/ '),
         "site_name": site_name,
         "start_urls": start_urls,
         "pattern": pattern,
-        "site_urls": site_urls,
         "max_urls": max_urls,
         "remove_selectors": remove_selectors,
     })
@@ -199,17 +179,16 @@ def update_site(
 def crawl_site_urls(
         knowledge_base_name: str = _request_params["knowledge_base_name"],
         site_id: int = _request_params["site_id"],
-        filter_method: str = Body(..., examples=["none", "append"]),
+        site_urls: List[str] = _request_params["site_urls"],
+        filter_method: str = Body(..., examples=["all", "new"]),
 ):
     """
     更新 site_urls 的信息
-    :param knowledge_base_name:
-    :param site_id:
-    :param filter_method:
     """
     
     site_service = KBSiteService(knowledge_base_name)
     site_info = site_service.find_site_by_id(site_id)
+    site_urls = list(set(site_urls))
     
     def output():
 
@@ -225,8 +204,16 @@ def crawl_site_urls(
         
         doc_path = kb.doc_path  # knowledge_base/xxx/content
         
+        local_urls = site_service.get_local_site_urls(doc_path, site_info['folder_name'])
+        
+        pad_local_site_urls = [site_info['hostname'] + local_url.replace(".html", "")
+                               for local_url in local_urls]
+        
         # 过滤 需要下载的数据
-        filter_site_urls = site_info['site_urls']
+        filter_site_urls = KBSiteService.filter_site_urls(site_urls, filter_method, pad_local_site_urls)
+        
+        if not len(filter_site_urls):
+            return {"code": 404, "msg": "没有需要更新的网址"}
         
         # 下载 html 并存放
         loader = AsyncChromiumLoader(filter_site_urls)
@@ -243,13 +230,23 @@ def crawl_site_urls(
             cur_parent_dir = cur_file_path.parent
             os.makedirs(cur_parent_dir, exist_ok=True)
             
-            # 内容修改
-            page_content = html.page_content
-            soup = BeautifulSoup(page_content)
-            
-            site_service.soup_remove_selectors(soup, site_info['remove_selectors'])
-            site_service.soup_add_base_tag(soup, hostname=hostname)
-            site_service.soup_change_link_src(soup, hostname=hostname)
+            try:
+                page_content = html.page_content
+                soup = BeautifulSoup(page_content, 'html.parser')
+            except Exception as e:
+                logger.error(f'{e.__class__.__name__}: {site_url} 网站解析失败',
+                             exc_info=e if log_verbose else None)
+                return {"code": 500, "msg": f"{site_url} 网站解析失败"}
+                
+            try:
+                # 内容修改
+                site_service.soup_remove_selectors(soup, site_info['remove_selectors'])
+                site_service.soup_add_base_tag(soup, hostname=hostname)
+                site_service.soup_change_link_src(soup, hostname=hostname)
+            except Exception as e:
+                logger.error(f'{e.__class__.__name__}: {site_url} 网站内容修改失败',
+                             exc_info=e if log_verbose else None)
+                return {"code": 500, "msg": f"{site_url} 网站内容修改失败"}
             
             with open(cur_file_path, 'w') as f:
                 f.write(soup.prettify())
@@ -257,7 +254,7 @@ def crawl_site_urls(
             yield json.dumps({
                 "code": 200,
                 "msg": "更新成功",
-                "doc": cur_file_path,
+                "doc": str(cur_file_path),
                 "url": site_url,
             }, ensure_ascii=False)
         
@@ -271,9 +268,6 @@ def crawl_site_url_force(
 ):
     """
     更新 site_urls 的信息
-    :param knowledge_base_name:
-    :param site_id:
-    :param site_url:
     """
     
     site_service = KBSiteService(knowledge_base_name)
@@ -320,7 +314,7 @@ def remove_local_site_url(
         site_url: str = Body(..., examples=["https://www.langchain.asia/modules/agents"]),
 ):
     """
-    删除文件
+    删除本地网站文件
     """
     site_service = KBSiteService(knowledge_base_name)
     site_info = site_service.find_site_by_id(site_id)
