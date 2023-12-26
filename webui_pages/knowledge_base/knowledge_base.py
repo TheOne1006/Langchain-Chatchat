@@ -1,4 +1,5 @@
 import streamlit as st
+from streamlit_tags import st_tags
 from webui_pages.utils import *
 from st_aggrid import AgGrid, JsCode
 from st_aggrid.grid_options_builder import GridOptionsBuilder
@@ -7,12 +8,11 @@ from server.knowledge_base.utils import get_file_path, LOADER_DICT
 from server.knowledge_base.kb_service.base import get_kb_details, get_kb_file_details
 from typing import Literal, Dict, Tuple
 from configs import (kbs_config,
-                    EMBEDDING_MODEL, DEFAULT_VS_TYPE,
-                    CHUNK_SIZE, OVERLAP_SIZE, ZH_TITLE_ENHANCE)
+                     EMBEDDING_MODEL, DEFAULT_VS_TYPE,
+                     CHUNK_SIZE, OVERLAP_SIZE, ZH_TITLE_ENHANCE)
 from server.utils import list_embed_models, list_online_embed_models
 import os
 import time
-
 
 # SENTENCE_SIZE = 100
 
@@ -59,34 +59,35 @@ def knowledge_base_page(api: ApiRequest, is_lite: bool = None):
     try:
         kb_list = {x["kb_name"]: x for x in get_kb_details()}
     except Exception as e:
-        st.error("获取知识库信息错误，请检查是否已按照 `README.md` 中 `4 知识库初始化与迁移` 步骤完成初始化或迁移，或是否为数据库连接错误。")
+        st.error(
+            "获取知识库信息错误，请检查是否已按照 `README.md` 中 `4 知识库初始化与迁移` 步骤完成初始化或迁移，或是否为数据库连接错误。")
         st.stop()
     kb_names = list(kb_list.keys())
-
+    
     if "selected_kb_name" in st.session_state and st.session_state["selected_kb_name"] in kb_names:
         selected_kb_index = kb_names.index(st.session_state["selected_kb_name"])
     else:
         selected_kb_index = 0
-
+    
     if "selected_kb_info" not in st.session_state:
         st.session_state["selected_kb_info"] = ""
-
+    
     def format_selected_kb(kb_name: str) -> str:
         if kb := kb_list.get(kb_name):
             return f"{kb_name} ({kb['vs_type']} @ {kb['embed_model']})"
         else:
             return kb_name
-
+    
     selected_kb = st.selectbox(
         "请选择或新建知识库：",
         kb_names + ["新建知识库"],
         format_func=format_selected_kb,
         index=selected_kb_index
     )
-
+    
     if selected_kb == "新建知识库":
         with st.form("新建知识库"):
-
+            
             kb_name = st.text_input(
                 "新建知识库名称",
                 placeholder="新知识库名称，不支持中文命名",
@@ -97,9 +98,9 @@ def knowledge_base_page(api: ApiRequest, is_lite: bool = None):
                 placeholder="知识库简介，方便Agent查找",
                 key="kb_info",
             )
-
+            
             cols = st.columns(2)
-
+            
             vs_types = list(kbs_config.keys())
             vs_type = cols[0].selectbox(
                 "向量库类型",
@@ -107,25 +108,25 @@ def knowledge_base_page(api: ApiRequest, is_lite: bool = None):
                 index=vs_types.index(DEFAULT_VS_TYPE),
                 key="vs_type",
             )
-
+            
             if is_lite:
                 embed_models = list_online_embed_models()
             else:
                 embed_models = list_embed_models() + list_online_embed_models()
-
+            
             embed_model = cols[1].selectbox(
                 "Embedding 模型",
                 embed_models,
                 index=embed_models.index(EMBEDDING_MODEL),
                 key="embed_model",
             )
-
+            
             submit_create_kb = st.form_submit_button(
                 "新建",
                 # disabled=not bool(kb_name),
                 use_container_width=True,
             )
-
+        
         if submit_create_kb:
             if not kb_name or not kb_name.strip():
                 st.error(f"知识库名称不能为空！")
@@ -141,7 +142,7 @@ def knowledge_base_page(api: ApiRequest, is_lite: bool = None):
                 st.session_state["selected_kb_name"] = kb_name
                 st.session_state["selected_kb_info"] = kb_info
                 st.rerun()
-
+    
     elif selected_kb:
         kb = selected_kb
         st.session_state["selected_kb_info"] = kb_list[kb]['kb_info']
@@ -150,13 +151,123 @@ def knowledge_base_page(api: ApiRequest, is_lite: bool = None):
                                  [i for ls in LOADER_DICT.values() for i in ls],
                                  accept_multiple_files=True,
                                  )
-        kb_info = st.text_area("请输入知识库介绍:", value=st.session_state["selected_kb_info"], max_chars=None, key=None,
+        kb_info = st.text_area("请输入知识库介绍:", value=st.session_state["selected_kb_info"], max_chars=None,
+                               key=None,
                                help=None, on_change=None, args=None, kwargs=None)
-
+        
         if kb_info != st.session_state["selected_kb_info"]:
             st.session_state["selected_kb_info"] = kb_info
             api.update_kb_info(kb, kb_info)
-
+        
+        with st.expander(
+                "知识库网站",
+                expanded=True,
+        ):
+            site_cols_1 = st.columns(2)
+            site_name = site_cols_1[0].text_input(
+                '网站名',
+                placeholder="知识网站名名称",
+                key="site_name",
+            )
+            
+            site_pattern = site_cols_1[1].text_input(
+                '正则',
+                placeholder="匹配链接的正则",
+                key="pattern",
+            )
+            
+            site_cols_2 = st.columns(2)
+            site_folder = site_cols_2[0].text_input(
+                '目录',
+                placeholder="html存放目录",
+                key="folder_name",
+            )
+            site_max_urls = site_cols_2[1].number_input(
+                '最大链接数',
+                min_value=1,
+                max_value=100,
+                key="max_urls",
+            )
+            
+            site_start_urls = st_tags(
+                label='起始网址：',
+                text='按回车键添加更多网址',
+                key="start_urls",
+                suggestions=[],
+                value=[],  # default value
+                maxtags=20,
+            )
+            
+            st.write("需要抓取的链接：")
+            
+            if "links_df" not in st.session_state:
+                st.session_state["links_df"] = pd.DataFrame(
+                    columns=["url", "is_enable"],
+                    data=[])
+            
+            st.data_editor(st.session_state["links_df"],
+                           use_container_width=True,
+                           column_config={
+                               "url": st.column_config.Column(
+                                   "抓取网址",
+                                   width="medium",
+                                   required=True,
+                               ),
+                               "is_enable": st.column_config.CheckboxColumn(
+                                   "是否抓取",
+                                   default=True
+                               ),
+                           },
+                           num_rows="dynamic",
+                           )
+            
+            site_cols_btns = st.columns(2)
+            
+            if site_cols_btns[0].button(
+                    "开始解析",
+                    type="secondary",
+                    disabled=not (site_max_urls and len(site_start_urls) and site_pattern),
+                    use_container_width=True,
+            ):
+                extract_data = api.extract_site_urls(pattern=site_pattern,
+                                                     start_urls=site_start_urls,
+                                                     max_urls=site_max_urls,
+                                                     # todo
+                                                     site_loader_name='')
+                
+                link_data = [{"url": item, "is_enable": True} for item in extract_data['links']]
+                new_df = pd.DataFrame(columns=["url", "is_enable"], data=link_data)
+                st.session_state["links_df"] = new_df
+                
+                st.rerun()
+            
+            if site_cols_btns[1].button(
+                    "开始抓取",
+                    type="primary",
+                    disabled=not (site_max_urls and len(site_start_urls) and site_pattern
+                                  and len(st.session_state["links_df"])
+                                  and site_folder and site_name
+                    ),
+                    use_container_width=True,
+            ):
+                cur_links = st.session_state["links_df"]
+                
+                cur_site_urls = [item['url'] for item in cur_links if item['is_enable']]
+                
+                extract_data = api.crawl_site_urls(
+                    site_name=site_name.strip(),
+                    folder_name=site_folder.strip(),
+                    site_urls=cur_site_urls,
+                    pattern=site_pattern,
+                    kb_name=kb,
+                    start_urls=site_start_urls,
+                    max_urls=site_max_urls,
+                    site_loader_name='',
+                    document_loader_name='',
+                )
+                
+                st.rerun()
+        
         # with st.sidebar:
         with st.expander(
                 "文件处理配置",
@@ -168,7 +279,7 @@ def knowledge_base_page(api: ApiRequest, is_lite: bool = None):
             cols[2].write("")
             cols[2].write("")
             zh_title_enhance = cols[2].checkbox("开启中文标题加强", ZH_TITLE_ENHANCE)
-
+        
         if st.button(
                 "添加文件到知识库",
                 # use_container_width=True,
@@ -184,9 +295,9 @@ def knowledge_base_page(api: ApiRequest, is_lite: bool = None):
                 st.toast(msg, icon="✔")
             elif msg := check_error_msg(ret):
                 st.toast(msg, icon="✖")
-
+        
         st.divider()
-
+        
         # 知识库详情
         # st.info("请选择文件，点击按钮进行操作。")
         doc_details = pd.DataFrame(get_kb_file_details(kb))
@@ -217,7 +328,7 @@ def knowledge_base_page(api: ApiRequest, is_lite: bool = None):
                 },
                 "multiple",
             )
-
+            
             doc_grid = AgGrid(
                 doc_details,
                 gb.build(),
@@ -229,9 +340,9 @@ def knowledge_base_page(api: ApiRequest, is_lite: bool = None):
                 allow_unsafe_jscode=True,
                 enable_enterprise_modules=False
             )
-
+            
             selected_rows = doc_grid.get("selected_rows", [])
-
+            
             cols = st.columns(4)
             file_name, file_path = file_exists(kb, selected_rows)
             if file_path:
@@ -247,11 +358,12 @@ def knowledge_base_page(api: ApiRequest, is_lite: bool = None):
                     "",
                     disabled=True,
                     use_container_width=True, )
-
+            
             st.write()
             # 将文件分词并加载到向量库中
             if cols[1].button(
-                    "重新添加至向量库" if selected_rows and (pd.DataFrame(selected_rows)["in_db"]).any() else "添加至向量库",
+                    "重新添加至向量库" if selected_rows and (
+                            pd.DataFrame(selected_rows)["in_db"]).any() else "添加至向量库",
                     disabled=not file_exists(kb, selected_rows)[0],
                     use_container_width=True,
             ):
@@ -262,7 +374,7 @@ def knowledge_base_page(api: ApiRequest, is_lite: bool = None):
                                    chunk_overlap=chunk_overlap,
                                    zh_title_enhance=zh_title_enhance)
                 st.rerun()
-
+            
             # 将文件从向量库中删除，但不删除文件本身。
             if cols[2].button(
                     "从向量库删除",
@@ -272,7 +384,7 @@ def knowledge_base_page(api: ApiRequest, is_lite: bool = None):
                 file_names = [row["file_name"] for row in selected_rows]
                 api.delete_kb_docs(kb, file_names=file_names)
                 st.rerun()
-
+            
             if cols[3].button(
                     "从知识库中删除",
                     type="primary",
@@ -281,11 +393,11 @@ def knowledge_base_page(api: ApiRequest, is_lite: bool = None):
                 file_names = [row["file_name"] for row in selected_rows]
                 api.delete_kb_docs(kb, file_names=file_names, delete_content=True)
                 st.rerun()
-
+        
         st.divider()
-
+        
         cols = st.columns(3)
-
+        
         if cols[0].button(
                 "依据源文件重建向量库",
                 # help="无需上传文件，通过其它方式将文档拷贝到对应知识库content目录下，点击本按钮即可重建知识库。",
@@ -296,15 +408,15 @@ def knowledge_base_page(api: ApiRequest, is_lite: bool = None):
                 empty = st.empty()
                 empty.progress(0.0, "")
                 for d in api.recreate_vector_store(kb,
-                                                chunk_size=chunk_size,
-                                                chunk_overlap=chunk_overlap,
-                                                zh_title_enhance=zh_title_enhance):
+                                                   chunk_size=chunk_size,
+                                                   chunk_overlap=chunk_overlap,
+                                                   zh_title_enhance=zh_title_enhance):
                     if msg := check_error_msg(d):
                         st.toast(msg)
                     else:
                         empty.progress(d["finished"] / d["total"], d["msg"])
                 st.rerun()
-
+        
         if cols[2].button(
                 "删除知识库",
                 use_container_width=True,
